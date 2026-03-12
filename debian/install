@@ -1,0 +1,4 @@
+packaging/vscode-insiders-updater.desktop usr/share/applications/
+assets/icon.svg usr/share/icons/hicolor/scalable/apps/vscode-insiders-updater.svg
+scripts/system-install-helper.sh usr/lib/vscode-insiders-updater/
+scripts/setup-passwordless-policy.sh usr/lib/vscode-insiders-updater/

@@ -1,0 +1,15 @@
+Source: vscode-insiders-updater
+Section: utils
+Priority: optional
+Maintainer: Nariman Jafari <noreply@example.com>
+Build-Depends: debhelper-compat (= 13), dh-python, pybuild-plugin-pyproject, python3-all
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
+
+Package: vscode-insiders-updater
+Architecture: all
+Depends: ${misc:Depends}, ${python3:Depends}, python3-pyside6.qtwidgets, sudo, policykit-1
+Description: Professional VS Code Insiders updater for Linux
+ Desktop updater that checks VS Code Insiders versions,
+ fetches release notes, asks for confirmation, and installs updates.
+ Includes one-time passwordless policy setup for update operations.

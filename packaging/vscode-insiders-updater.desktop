@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=VS Code Insiders Updater
+GenericName=VS Code Insiders Updater
+Comment=Check and install VS Code Insiders updates
+Exec=vsi-updater
+Icon=vscode-insiders-updater
+Terminal=false
+Categories=Development;Utility;
+StartupNotify=true
+StartupWMClass=vscode-insiders-updater
+Keywords=vscode;insiders;updater;editor;

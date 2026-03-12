@@ -1,0 +1,25 @@
+# Python runtime and caches
+.venv/
+__pycache__/
+*.py[cod]
+*.so
+
+# Packaging/build artifacts
+build/
+dist/
+*.egg-info/
+*.deb
+*.ddeb
+*.build
+*.buildinfo
+*.changes
+*.dsc
+*.tar.*
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/
+
+# Editor/OS noise
+.DS_Store
+Thumbs.db
