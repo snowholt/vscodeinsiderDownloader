@@ -7,7 +7,7 @@ import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 from vsi_updater import __version__
 from vsi_updater.models import InstallResult
@@ -22,6 +22,7 @@ SETUP_CANDIDATES = [
     Path("/usr/lib/vscode-insiders-updater/setup-passwordless-policy.sh"),
 ]
 USER_AGENT = f"vscode-insiders-updater/{__version__}"
+ProgressCallback = Callable[[int, str], None]
 
 
 class InstallerService:
@@ -35,6 +36,17 @@ class InstallerService:
 
     def _run(self, cmd: list[str]) -> subprocess.CompletedProcess[str]:
         return subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+    def _emit_progress(
+        self,
+        progress_callback: Optional[ProgressCallback],
+        value: int,
+        message: str,
+    ) -> None:
+        if not progress_callback:
+            return
+        bounded = max(0, min(100, value))
+        progress_callback(bounded, message)
 
     def is_passwordless_ready(self) -> bool:
         helper_script = self._resolve_existing(HELPER_CANDIDATES)
@@ -67,15 +79,51 @@ class InstallerService:
         details = (result.stderr or result.stdout).strip()
         return InstallResult(False, "Failed to configure passwordless policy.", details)
 
-    def _download_deb(self, download_url: str) -> Tuple[Optional[Path], Optional[InstallResult]]:
+    def _download_deb(
+        self,
+        download_url: str,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> Tuple[Optional[Path], Optional[InstallResult]]:
         tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".deb")
         tmp_file.close()
         target = Path(tmp_file.name)
 
         request = urllib.request.Request(download_url, headers={"User-Agent": USER_AGENT})
         try:
+            self._emit_progress(progress_callback, 10, "Starting download...")
             with urllib.request.urlopen(request, timeout=30) as response, target.open("wb") as out:
-                out.write(response.read())
+                content_length = response.headers.get("Content-Length")
+                total_size = int(content_length) if content_length and content_length.isdigit() else 0
+
+                bytes_read = 0
+                milestones = [(1 * 1024 * 1024, 30), (10 * 1024 * 1024, 45), (25 * 1024 * 1024, 60)]
+                next_milestone = 0
+
+                while True:
+                    chunk = response.read(1024 * 256)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    bytes_read += len(chunk)
+
+                    if total_size > 0:
+                        ratio = min(1.0, bytes_read / total_size)
+                        percent = 10 + int(ratio * 60)
+                        self._emit_progress(
+                            progress_callback,
+                            percent,
+                            f"Downloading update... {int(ratio * 100)}%",
+                        )
+                    elif next_milestone < len(milestones) and bytes_read >= milestones[next_milestone][0]:
+                        milestone_percent = milestones[next_milestone][1]
+                        self._emit_progress(
+                            progress_callback,
+                            milestone_percent,
+                            "Downloading update...",
+                        )
+                        next_milestone += 1
+
+            self._emit_progress(progress_callback, 70, "Download complete.")
         except (urllib.error.URLError, TimeoutError, ValueError) as exc:
             try:
                 target.unlink(missing_ok=True)
@@ -85,9 +133,15 @@ class InstallerService:
 
         return target, None
 
-    def install_update(self, download_url: str) -> InstallResult:
+    def install_update(
+        self,
+        download_url: str,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> InstallResult:
+        self._emit_progress(progress_callback, 5, "Checking installer prerequisites...")
         helper_script = self._resolve_existing(HELPER_CANDIDATES)
         if not helper_script:
+            self._emit_progress(progress_callback, 100, "Install failed.")
             return InstallResult(
                 False,
                 "System install helper script is missing.",
@@ -97,6 +151,7 @@ class InstallerService:
         setup_script = self._resolve_existing(SETUP_CANDIDATES)
 
         if not self.is_passwordless_ready():
+            self._emit_progress(progress_callback, 100, "Install failed.")
             return InstallResult(
                 False,
                 "Passwordless policy is not configured yet.",
@@ -106,17 +161,22 @@ class InstallerService:
                 ),
             )
 
-        deb_path, error = self._download_deb(download_url)
+        deb_path, error = self._download_deb(download_url, progress_callback=progress_callback)
         if error:
+            self._emit_progress(progress_callback, 100, "Download failed.")
             return error
 
         try:
+            self._emit_progress(progress_callback, 80, "Installing package...")
             result = self._run(["sudo", "-n", "/bin/bash", str(helper_script), str(deb_path)])
             if result.returncode == 0:
+                self._emit_progress(progress_callback, 92, "Applying desktop integration...")
                 self.ensure_code_insiders_dock_identity()
+                self._emit_progress(progress_callback, 100, "Update installed successfully.")
                 return InstallResult(True, "VS Code Insiders installed successfully.")
 
             details = (result.stderr or result.stdout).strip()
+            self._emit_progress(progress_callback, 100, "Install failed.")
             return InstallResult(False, "Install failed.", details)
         finally:
             if deb_path:

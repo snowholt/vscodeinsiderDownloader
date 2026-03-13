@@ -1,3 +1,20 @@
+vscode-insiders-updater (0.1.3-1) unstable; urgency=medium
+
+  * Add visible install progress dialog with progress bar in GUI mode.
+  * Show staged progress messages for download, install, and finalize steps.
+  * Bump application and package version to 0.1.3.
+
+ -- Nariman Jafari <noreply@example.com>  Fri, 13 Mar 2026 17:00:00 +0000
+
+vscode-insiders-updater (0.1.2-1) unstable; urgency=medium
+
+  * Show installed and latest Insiders commit hashes in GUI and CLI.
+  * Move install workflow off the GUI thread to prevent app freezing
+    during download and installation.
+  * Bump application and package version to 0.1.2.
+
+ -- Nariman Jafari <noreply@example.com>  Fri, 13 Mar 2026 16:00:00 +0000
+
 vscode-insiders-updater (0.1.1-1) unstable; urgency=medium
 
   * Fix Insiders update detection when product version is unchanged by

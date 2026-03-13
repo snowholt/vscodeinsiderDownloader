@@ -7,6 +7,12 @@ from vsi_updater.metadata import APP_AUTHOR, APP_GITHUB, APP_NAME, APP_VERSION
 from vsi_updater.update_service import collect_update_state
 
 
+def _short_commit(value: str | None) -> str:
+    if not value:
+        return "unavailable"
+    return value[:12]
+
+
 def print_about() -> None:
     print(f"{APP_NAME} v{APP_VERSION}")
     print(f"Author: {APP_AUTHOR}")
@@ -16,7 +22,9 @@ def print_about() -> None:
 def check_only() -> int:
     state = collect_update_state()
     print(f"Installed: {state.installed_version or 'not installed'}")
+    print(f"Installed commit: {_short_commit(state.installed_build)}")
     print(f"Latest: {state.latest_version or 'unavailable'}")
+    print(f"Latest commit: {_short_commit(state.latest_build)}")
     print(f"Check status: {'ok' if state.check_ok else 'failed'}")
     if state.source:
         print(f"Source: {state.source}")
@@ -32,7 +40,9 @@ def check_only() -> int:
 def interactive_install() -> int:
     state = collect_update_state()
     print(f"Installed: {state.installed_version or 'not installed'}")
+    print(f"Installed commit: {_short_commit(state.installed_build)}")
     print(f"Latest: {state.latest_version or 'unavailable'}")
+    print(f"Latest commit: {_short_commit(state.latest_build)}")
 
     if not state.check_ok:
         print("Unable to verify updates right now.")
