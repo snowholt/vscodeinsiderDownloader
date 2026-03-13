@@ -9,6 +9,7 @@ import urllib.request
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from vsi_updater import __version__
 from vsi_updater.models import InstallResult
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -20,7 +21,7 @@ SETUP_CANDIDATES = [
     PROJECT_ROOT / "scripts" / "setup-passwordless-policy.sh",
     Path("/usr/lib/vscode-insiders-updater/setup-passwordless-policy.sh"),
 ]
-USER_AGENT = "vscode-insiders-updater/0.1"
+USER_AGENT = f"vscode-insiders-updater/{__version__}"
 
 
 class InstallerService:

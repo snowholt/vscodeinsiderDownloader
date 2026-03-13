@@ -10,12 +10,13 @@ import urllib.request
 from html.parser import HTMLParser
 from typing import List, Optional, Tuple
 
+from vsi_updater import __version__
 from vsi_updater.models import UpdateState
 
 UPDATE_API_URL = "https://update.code.visualstudio.com/api/update/linux-deb-x64/insider/latest"
 DEFAULT_DOWNLOAD_URL = "https://code.visualstudio.com/sha/download?build=insider&os=linux-deb-x64"
 UPDATES_INDEX_URL = "https://code.visualstudio.com/updates/"
-USER_AGENT = "vscode-insiders-updater/0.1"
+USER_AGENT = f"vscode-insiders-updater/{__version__}"
 
 
 class _ReleaseNotesParser(HTMLParser):
@@ -68,6 +69,33 @@ def _normalize_version(raw: Optional[str]) -> Optional[str]:
     return value
 
 
+def _normalize_build(raw: Optional[str]) -> Optional[str]:
+    if not raw:
+        return None
+    value = raw.strip().lower()
+    if not value:
+        return None
+    if re.fullmatch(r"[0-9a-f]{7,64}", value):
+        return value
+    return None
+
+
+def _parse_int(value: object) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        cleaned = value.strip()
+        if not cleaned:
+            return None
+        try:
+            return int(cleaned)
+        except ValueError:
+            return None
+    return None
+
+
 def _version_tuple(version: Optional[str]) -> Optional[Tuple[int, int, int]]:
     if not version:
         return None
@@ -80,7 +108,12 @@ def _version_tuple(version: Optional[str]) -> Optional[Tuple[int, int, int]]:
     return major, minor, patch
 
 
-def _is_update_available(installed: Optional[str], latest: Optional[str]) -> bool:
+def _is_update_available(
+    installed: Optional[str],
+    latest: Optional[str],
+    installed_build: Optional[str] = None,
+    latest_build: Optional[str] = None,
+) -> bool:
     if not latest:
         return False
     if not installed:
@@ -89,7 +122,17 @@ def _is_update_available(installed: Optional[str], latest: Optional[str]) -> boo
     installed_tuple = _version_tuple(installed)
     latest_tuple = _version_tuple(latest)
     if installed_tuple and latest_tuple:
-        return latest_tuple > installed_tuple
+        if latest_tuple != installed_tuple:
+            return latest_tuple > installed_tuple
+
+        if latest_build and installed_build:
+            # Insider publishes multiple builds under the same product version.
+            return latest_build != installed_build
+
+        return False
+
+    if latest_build and installed_build and installed == latest:
+        return latest_build != installed_build
 
     return installed != latest
 
@@ -104,15 +147,41 @@ def _run_cmd(cmd: List[str]) -> Optional[str]:
     return None
 
 
-def get_installed_version() -> Optional[str]:
+def _parse_installed_cli_output(output: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    if not output:
+        return None, None
+
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    if not lines:
+        return None, None
+
+    version = _normalize_version(lines[0])
+    build = _normalize_build(lines[1]) if len(lines) > 1 else None
+    return version, build
+
+
+def get_installed_version() -> Tuple[Optional[str], Optional[str]]:
+    installed_version: Optional[str] = None
+    installed_build: Optional[str] = None
+
     output = _run_cmd(["code-insiders", "--version"])
-    if output:
-        first_line = output.splitlines()[0].strip()
-        if first_line:
-            return first_line
+    parsed_version, parsed_build = _parse_installed_cli_output(output)
+    if parsed_version:
+        installed_version = parsed_version
+    if parsed_build:
+        installed_build = parsed_build
 
     dpkg_version = _run_cmd(["dpkg-query", "-W", "-f=${Version}", "code-insiders"])
-    return _normalize_version(dpkg_version)
+    normalized_dpkg_version = _normalize_version(dpkg_version)
+    if not installed_version:
+        installed_version = normalized_dpkg_version
+
+    if not installed_build and normalized_dpkg_version:
+        match = re.search(r"\+([0-9a-f]{7,64})", normalized_dpkg_version, re.IGNORECASE)
+        if match:
+            installed_build = _normalize_build(match.group(1))
+
+    return installed_version, installed_build
 
 
 def _version_to_updates_slug(version: Optional[str]) -> Optional[str]:
@@ -136,8 +205,8 @@ def _discover_updates_page_fallback() -> str:
     return f"https://code.visualstudio.com{match.group(1)}"
 
 
-def fetch_latest_release_info() -> Tuple[Optional[str], str, str]:
-    """Return latest version, download URL, and source marker."""
+def fetch_latest_release_info() -> Tuple[Optional[str], Optional[str], Optional[int], str, str, Optional[str]]:
+    """Return latest version/build metadata, download URL, source marker, and check error."""
     try:
         payload = json.loads(_http_get(UPDATE_API_URL))
         latest = _normalize_version(
@@ -145,10 +214,12 @@ def fetch_latest_release_info() -> Tuple[Optional[str], str, str]:
             or payload.get("name")
             or payload.get("version")
         )
+        latest_build = _normalize_build(payload.get("version"))
+        latest_timestamp = _parse_int(payload.get("timestamp"))
         url = payload.get("url") or DEFAULT_DOWNLOAD_URL
-        return latest, url, "api"
-    except (json.JSONDecodeError, urllib.error.URLError, ValueError, TimeoutError):
-        return None, DEFAULT_DOWNLOAD_URL, "fallback"
+        return latest, latest_build, latest_timestamp, url, "api", None
+    except (json.JSONDecodeError, urllib.error.URLError, ValueError, TimeoutError) as exc:
+        return None, None, None, DEFAULT_DOWNLOAD_URL, "api-error", f"{type(exc).__name__}: {exc}"
 
 
 def resolve_release_notes_url(latest_version: Optional[str]) -> str:
@@ -182,15 +253,21 @@ def fetch_release_notes_summary(release_notes_url: str) -> str:
 
 
 def collect_update_state() -> UpdateState:
-    installed = get_installed_version()
-    latest, download_url, source = fetch_latest_release_info()
+    installed_version, installed_build = get_installed_version()
+    latest, latest_build, latest_timestamp, download_url, source, check_error = fetch_latest_release_info()
     notes_url = resolve_release_notes_url(latest)
     notes_summary = fetch_release_notes_summary(notes_url)
+    check_ok = latest is not None and source == "api"
 
     return UpdateState(
-        installed_version=installed,
+        installed_version=installed_version,
+        installed_build=installed_build,
         latest_version=latest,
-        update_available=_is_update_available(installed, latest),
+        latest_build=latest_build,
+        latest_timestamp=latest_timestamp,
+        update_available=_is_update_available(installed_version, latest, installed_build, latest_build),
+        check_ok=check_ok,
+        check_error=check_error,
         release_notes_url=notes_url,
         release_notes_summary=notes_summary,
         download_url=download_url,

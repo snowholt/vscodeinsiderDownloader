@@ -96,7 +96,10 @@ class UpdaterWindow(QWidget):
         self.notes_url_label.setText(f"Release notes: {self.state.release_notes_url}")
         self.notes.setPlainText(self.state.release_notes_summary)
 
-        if self.state.update_available:
+        if not self.state.check_ok:
+            self.status_label.setText("Unable to verify updates right now.")
+            self.install_button.setEnabled(False)
+        elif self.state.update_available:
             self.status_label.setText("Update available.")
             self.install_button.setEnabled(True)
         else:

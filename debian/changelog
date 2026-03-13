@@ -1,3 +1,14 @@
+vscode-insiders-updater (0.1.1-1) unstable; urgency=medium
+
+  * Fix Insiders update detection when product version is unchanged by
+    using build metadata.
+  * Report update check failures explicitly instead of showing up-to-date.
+  * Improve CLI diagnostics for update source and network/API errors.
+  * Relax hard PySide6 package dependency for wider distro compatibility.
+  * Bump application and package version to 0.1.1.
+
+ -- Nariman Jafari <noreply@example.com>  Fri, 13 Mar 2026 14:00:00 +0000
+
 vscode-insiders-updater (0.1.0-1) unstable; urgency=medium
 
   * Initial package release.
