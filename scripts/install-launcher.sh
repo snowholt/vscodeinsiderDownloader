@@ -12,6 +12,13 @@ LEGACY_ICON_SVG="$HOME/.local/share/icons/vscode-insiders-installer.svg"
 DESKTOP_DIR="$HOME/.local/share/applications"
 DESKTOP_FILE="$DESKTOP_DIR/vscode-insiders-updater.desktop"
 RUNNER_SCRIPT="$ROOT_DIR/scripts/run-installer-ui.sh"
+if [[ -x /usr/bin/vsi-updater ]]; then
+  LAUNCH_COMMAND="/usr/bin/vsi-updater"
+elif command -v vsi-updater >/dev/null 2>&1; then
+  LAUNCH_COMMAND="$(command -v vsi-updater)"
+else
+  LAUNCH_COMMAND="/bin/bash $RUNNER_SCRIPT"
+fi
 
 if [[ ! -f "$ICON_SOURCE" ]]; then
   echo "Icon not found at: $ICON_SOURCE"
@@ -28,7 +35,7 @@ Type=Application
 Name=VS Code Insiders Updater
 GenericName=VS Code Insiders Updater
 Comment=Professional VS Code Insiders updater and installer
-Exec=/bin/bash $RUNNER_SCRIPT
+Exec=$LAUNCH_COMMAND
 Icon=$ICON_TARGET
 Terminal=false
 Categories=Development;Utility;
@@ -44,8 +51,9 @@ if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database "$DESKTOP_DIR" >/dev/null 2>&1 || true
 fi
 
-if command -v gtk-update-icon-cache >/dev/null 2>&1; then
-  gtk-update-icon-cache -q "$HOME/.local/share/icons/hicolor" || true
+HICOLOR_DIR="$HOME/.local/share/icons/hicolor"
+if command -v gtk-update-icon-cache >/dev/null 2>&1 && [[ -f "$HICOLOR_DIR/index.theme" ]]; then
+  gtk-update-icon-cache -q "$HICOLOR_DIR" >/dev/null 2>&1 || true
 fi
 
 echo "Launcher created at: $DESKTOP_FILE"

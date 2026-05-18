@@ -23,6 +23,10 @@ SETUP_CANDIDATES = [
 ]
 USER_AGENT = f"vscode-insiders-updater/{__version__}"
 ProgressCallback = Callable[[int, str], None]
+CODE_INSIDERS_DESKTOP_OVERRIDES = {
+    "StartupWMClass": "Code - Insiders",
+    "StartupNotify": "true",
+}
 
 
 class InstallerService:
@@ -47,6 +51,50 @@ class InstallerService:
             return
         bounded = max(0, min(100, value))
         progress_callback(bounded, message)
+
+    def _apply_desktop_entry_overrides(
+        self,
+        lines: list[str],
+        overrides: dict[str, str],
+    ) -> list[str]:
+        output: list[str] = []
+        override_keys = set(overrides)
+        in_desktop_entry = False
+        inserted = False
+
+        def append_overrides() -> None:
+            for key, value in overrides.items():
+                output.append(f"{key}={value}")
+
+        for line in lines:
+            stripped = line.strip()
+            is_section = stripped.startswith("[") and stripped.endswith("]")
+            if is_section:
+                if in_desktop_entry and not inserted:
+                    append_overrides()
+                    inserted = True
+                in_desktop_entry = stripped == "[Desktop Entry]"
+                output.append(line)
+                continue
+
+            if in_desktop_entry and "=" in line:
+                key = line.split("=", 1)[0]
+                if key in override_keys:
+                    continue
+
+            output.append(line)
+
+        if in_desktop_entry and not inserted:
+            append_overrides()
+            inserted = True
+
+        if not inserted:
+            if output and output[-1]:
+                output.append("")
+            output.append("[Desktop Entry]")
+            append_overrides()
+
+        return output
 
     def is_passwordless_ready(self) -> bool:
         helper_script = self._resolve_existing(HELPER_CANDIDATES)
@@ -196,14 +244,11 @@ class InstallerService:
         target = target_dir / "code-insiders.desktop"
 
         content = source.read_text(encoding="utf-8", errors="replace").splitlines()
-        filtered = [
-            line
-            for line in content
-            if not line.startswith("StartupWMClass=")
-        ]
-        filtered.append("StartupWMClass=Code - Insiders")
-        filtered.append("StartupNotify=true")
-        target.write_text("\n".join(filtered) + "\n", encoding="utf-8")
+        updated = self._apply_desktop_entry_overrides(
+            content,
+            CODE_INSIDERS_DESKTOP_OVERRIDES,
+        )
+        target.write_text("\n".join(updated) + "\n", encoding="utf-8")
 
         subprocess.run(
             ["update-desktop-database", str(target_dir)],

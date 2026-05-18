@@ -3,8 +3,60 @@
 from __future__ import annotations
 
 import argparse
+import os
+import shlex
+import shutil
+import subprocess
+import sys
 
 from vsi_updater.cli import check_only, interactive_install, print_about
+
+
+def _terminal_command() -> list[str] | None:
+    candidates = [
+        ("x-terminal-emulator", ["-e"]),
+        ("gnome-terminal", ["--"]),
+        ("kgx", ["--"]),
+        ("konsole", ["-e"]),
+        ("xfce4-terminal", ["-e"]),
+        ("mate-terminal", ["-e"]),
+        ("xterm", ["-e"]),
+    ]
+    for name, args in candidates:
+        executable = shutil.which(name)
+        if executable:
+            return [executable, *args]
+    return None
+
+
+def _run_terminal_fallback(reason: str) -> int:
+    if sys.stdin.isatty() or not (
+        os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
+    ):
+        print(reason)
+        return interactive_install()
+
+    terminal = _terminal_command()
+    if not terminal:
+        notifier = shutil.which("notify-send")
+        if notifier:
+            subprocess.run(
+                [notifier, "VS Code Insiders Updater", reason],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        print(reason)
+        return 1
+
+    module_command = f"{shlex.quote(sys.executable)} -m vsi_updater.main --no-gui"
+    script = (
+        f"printf '%s\\n\\n' {shlex.quote(reason)}; "
+        f"{module_command}; "
+        "status=$?; printf '\\nPress Enter to close...'; read _; exit $status"
+    )
+    subprocess.Popen([*terminal, "sh", "-lc", script], start_new_session=True)
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -32,8 +84,9 @@ def entrypoint() -> int:
     try:
         from vsi_updater.ui import run_gui
     except ImportError:
-        print("PySide6 is not available. Falling back to terminal flow.")
-        return interactive_install()
+        return _run_terminal_fallback(
+            "PySide6 is not available. Falling back to terminal flow."
+        )
 
     return run_gui()
 
